@@ -1,7 +1,4 @@
-# 📦 Streamlit App Starter Kit 
-```
-⬆️ (Replace above with your app's name)
-```
+# 📦 Interactive Active Window Tracking Analysis
 
 Description of the app ...
 
