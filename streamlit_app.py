@@ -6,7 +6,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 
 """
-# Let's analyse your AWT data!
+# Let's explore your AWT data!
 """
 
 # Sidebar for accepting input parameters
@@ -19,16 +19,138 @@ with st.sidebar:
 # Main section for processing AWT data
 if awt_uploaded_file is not None:
     st.header('First glance')
-    st.markdown('Ok, great! You have uploaded some data. In the table below, we show the most occurring window titles.') 
-    
+    st.success('Ok, great! You have uploaded some data. In the table below, we show the most occurring window titles.') 
+
     # Explicitly set the delimiter as semicolon
     dataframe_awt = pd.read_csv(awt_uploaded_file, delimiter=';')
 
-    with st.expander('Most occurring titles', expanded=True):
-        st.markdown('Please provide a title for the project or case you were working on in the final column. If the title is too generic, it is fine to leave it empty.')
+    with st.expander('Checking relations'):
 
         # Create a combined column of 'App' and 'Title'
         dataframe_awt['App and title'] = dataframe_awt['App'] + " - " + dataframe_awt['Title']
+
+        # Count the number of rows
+        row_count = dataframe_awt.shape[0]
+
+        # Display the number of rows
+        st.write(f"Number of rows in the DataFrame: {row_count}")
+
+        dataframe_awt
+
+        # Create a new DataFrame to store direct successions
+        direct_succession = pd.DataFrame(columns=['Succession', 'Count'])
+
+        # Create a list to store all successions
+        successions = []
+
+        # Iterate over rows of the DataFrame
+        for i in range(len(dataframe_awt) - 1):
+            current_end = dataframe_awt.iloc[i]['End']
+            next_begin = dataframe_awt.iloc[i + 1]['Begin']
+            
+            if current_end == next_begin:
+                current_app = dataframe_awt.iloc[i]['App and title']
+                next_app = dataframe_awt.iloc[i + 1]['App and title']
+                
+                succession = f"{current_app} > {next_app}"
+                successions.append(succession)
+
+        # Count occurrences of each succession
+        succession_counts = pd.Series(successions).value_counts().reset_index()
+        succession_counts.columns = ['Succession', 'Count']
+
+        # Merge with the direct_succession DataFrame
+        direct_succession = pd.merge(direct_succession, succession_counts, how='outer')
+
+        # Reset the index for a clean DataFrame
+        direct_succession = direct_succession.reset_index(drop=True)
+
+        # Display or use the direct_succession DataFrame
+        direct_succession
+
+        def merge_parallel_activities(df):
+            # Initialize a list to store the merged rows
+            merged_rows = []
+
+            # Index to keep track of current row position
+            i = 0
+            while i < len(df):
+                # Store the current row's details
+                start_time_A = df.iloc[i]['Begin']
+                end_time_A = df.iloc[i]['End']
+                title_A = df.iloc[i]['App and title']
+
+                # Check if the next row immediately follows the current row
+                if i + 1 < len(df) and end_time_A == df.iloc[i + 1]['Begin']:
+                    # Next row details
+                    i += 1
+                    start_time_B = df.iloc[i]['Begin']
+                    end_time_B = df.iloc[i]['End']
+                    title_B = df.iloc[i]['App and title']
+                    
+                    # Check if we can continue detecting the pattern
+                    pattern_detected = False
+                    while i + 1 < len(df):
+                        next_start_time = df.iloc[i + 1]['Begin']
+                        next_title = df.iloc[i + 1]['App and title']
+                        next_end_time = df.iloc[i + 1]['End']
+                        
+                        if end_time_B == next_start_time:
+                            if next_title == title_A:
+                                end_time_A = next_end_time
+                                pattern_detected = True
+                                i += 1
+                                # Continue checking for potential further pattern
+                            elif next_title == title_B:
+                                end_time_B = next_end_time
+                                i += 1
+                            else:
+                                break
+                        else:
+                            break
+
+                    # If a parallel pattern was detected
+                    if pattern_detected:
+                        merged_rows.append({
+                            'Begin': start_time_A,
+                            'End': end_time_B,
+                            'App and title': f"{title_A} || {title_B}"
+                        })
+                    else:
+                        # If no pattern was detected, record the rows as separate entries
+                        merged_rows.append({
+                            'Begin': start_time_A,
+                            'End': end_time_A,
+                            'App and title': title_A
+                        })
+                else:
+                    # No immediate following row, record the row as-is
+                    merged_rows.append({
+                        'Begin': start_time_A,
+                        'End': end_time_A,
+                        'App and title': title_A
+                    })
+
+                # Move to the next row
+                i += 1
+
+            # Create a DataFrame from the list of merged rows
+            dataframe_awt_par = pd.DataFrame(merged_rows)
+            return dataframe_awt_par
+
+        dataframe_awt_par = merge_parallel_activities(dataframe_awt)
+
+        # Count the number of rows
+        row_count = dataframe_awt_par.shape[0]
+
+        # Display the number of rows
+        st.write(f"Number of rows in the DataFrame: {row_count}")
+
+        # Display the result
+        dataframe_awt_par
+
+    with st.expander('Most occurring titles', expanded=True):
+        st.markdown('Please provide a title for the project or case you were working on in the final column. If the title is too generic, it is fine to leave it empty.')
 
         # Count the occurrences of each app title
         app_title_counts = dataframe_awt['App and title'].value_counts()
@@ -46,7 +168,7 @@ if awt_uploaded_file is not None:
 
         # Display the interactive data editor
         edited_df = st.data_editor(interactive_df, use_container_width=True, hide_index=True, column_order=("Count", "App and title", "Title of project or case"))
-        
+
         # Filter edited_df for rows where 'Title of project or case' is not empty
         non_empty_projects = edited_df[edited_df['Title of project or case'] != '']
 
@@ -93,6 +215,39 @@ if awt_uploaded_file is not None:
 
             # Display the scatter plot
             st.altair_chart(scatter_chart, use_container_width=True)
+
+    with st.expander('Edited data'):
+
+        # Convert columns to datetime
+        dataframe_awt['Begin'] = pd.to_datetime(dataframe_awt['Begin'])
+        dataframe_awt['End'] = pd.to_datetime(dataframe_awt['End'])
+
+        # Calculate the duration in seconds
+        dataframe_awt['Duration'] = (dataframe_awt['End'] - dataframe_awt['Begin']).dt.total_seconds()
+
+        # Create a new DataFrame excluding 'Type', 'Date', and 'Time' columns
+        df_filtered = dataframe_awt.drop(columns=['Type', 'Date', 'Time'])
+
+        # Count the number of rows
+        row_count = df_filtered.shape[0]
+
+        # Display the number of rows
+        st.write(f"Number of rows in the DataFrame: {row_count}")
+
+        # Display the DataFrame with a progress column showing the duration in seconds
+        st.data_editor(
+            df_filtered,
+            column_config={
+                "Duration": st.column_config.ProgressColumn(
+                    label="Duration (Seconds)",
+                    help="Duration in seconds",
+                    format="%d",  # Display as integer seconds
+                    min_value=df_filtered['Duration'].min(),
+                    max_value=df_filtered['Duration'].max(),
+                ),
+            },
+            hide_index=True,
+        )
 
     with st.expander('Cluster titles'):
 
